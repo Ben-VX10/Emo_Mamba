@@ -1,0 +1,57 @@
+# 数据集文件夹（忽略整个目录）
+Datasets/
+data/
+dataset/
+IEMOCAP_features/
+MELD_features/
+runs/
+
+# 模型保存文件
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.h5
+*.pkl
+*.npy
+*.npz
+
+# 训练输出和日志
+logs/
+runs/
+outputs/
+results/
+my_results/
+checkpoints/
+saved_models/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.so
+.Python
+
+# 虚拟环境
+venv/
+env/
+.venv/
+ENV/
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter Notebook 缓存
+.ipynb_checkpoints/
+
+# 压缩文件
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# 配置文件中的敏感信息
+*.env
+config_local.py
