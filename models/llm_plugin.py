@@ -1,5 +1,18 @@
 import torch
 import torch.nn as nn
+
+# 👇 新增：针对 PyTorch 2.4.0 缺失 set_submodule 的兼容性补丁 (Monkey Patch) 👇
+if not hasattr(nn.Module, "set_submodule"):
+    def _set_submodule(self, target: str, module: nn.Module) -> None:
+        atoms = target.split(".")
+        name = atoms.pop(-1)
+        mod = self
+        for item in atoms:
+            mod = getattr(mod, item)
+        setattr(mod, name, module)
+    nn.Module.set_submodule = _set_submodule
+# 👆 ------------------------------------------------------------------- 👆
+
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import LoraConfig, get_peft_model
 
