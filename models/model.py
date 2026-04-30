@@ -14,6 +14,7 @@ sys.path.append(str(project_root))
 # -------------------------------------
 
 from scripts.dataset import MERRDataset
+from mamba_ssm import Mamba
 
 class DepthwiseSeparableConv1d(nn.Module):
     """深度可分离卷积：大幅降低参数量，非常适合低算力环境"""
@@ -56,26 +57,50 @@ class ConvAttentionFusion(nn.Module):
         fused_features = torch.cat([audio_fused, visual_fused], dim=-1)
         return fused_features
 
-class MockBiMamba(nn.Module):
+# class MockBiMamba(nn.Module):
+#     """
+#     Bi-Mamba 的本地 Windows 测试替身。
+#     用于在低显存下模拟 O(N) 复杂度的长程时序推理的数据流。
+#     部署到 Linux 服务器后可替换为真实的 mamba-ssm。
+#     """
+#     def __init__(self, d_model):
+#         super().__init__()
+#         # 用简单的线性层模拟 Mamba 的前向和后向扫描状态转换
+#         self.forward_scan = nn.Linear(d_model, d_model)
+#         self.backward_scan = nn.Linear(d_model, d_model)
+#         self.norm = nn.LayerNorm(d_model)
+        
+#     def forward(self, x):
+#         # x shape: (Batch, Seq_Len, d_model)
+#         out_fwd = torch.relu(self.forward_scan(x))
+#         # 模拟反向扫描（真实 Mamba 会对序列进行 flip）
+#         out_bwd = torch.relu(self.backward_scan(x))
+        
+#         # 结合双向信息
+#         out = self.norm(out_fwd + out_bwd)
+#         return out
+
+class RealBiMamba(nn.Module):
     """
-    Bi-Mamba 的本地 Windows 测试替身。
-    用于在低显存下模拟 O(N) 复杂度的长程时序推理的数据流。
-    部署到 Linux 服务器后可替换为真实的 mamba-ssm。
+    真正的 Bi-Mamba 时空状态空间模型。
+    利用 O(N) 线性复杂度处理长程特征，且不丢失动态细节。
     """
     def __init__(self, d_model):
         super().__init__()
-        # 用简单的线性层模拟 Mamba 的前向和后向扫描状态转换
-        self.forward_scan = nn.Linear(d_model, d_model)
-        self.backward_scan = nn.Linear(d_model, d_model)
+        # 实例化官方 Mamba (前向与后向)
+        self.mamba_fwd = Mamba(d_model=d_model, d_state=16, d_conv=4, expand=2)
+        self.mamba_bwd = Mamba(d_model=d_model, d_state=16, d_conv=4, expand=2)
         self.norm = nn.LayerNorm(d_model)
         
     def forward(self, x):
-        # x shape: (Batch, Seq_Len, d_model)
-        out_fwd = torch.relu(self.forward_scan(x))
-        # 模拟反向扫描（真实 Mamba 会对序列进行 flip）
-        out_bwd = torch.relu(self.backward_scan(x))
-        
-        # 结合双向信息
+        # x 形状: (Batch, Seq_Len, d_model)
+        # 1. 前向扫描
+        out_fwd = self.mamba_fwd(x)
+        # 2. 后向扫描 (在时间维度 Seq_Len=1 上进行反转)
+        x_reversed = torch.flip(x, dims=[1])
+        out_bwd = self.mamba_bwd(x_reversed)
+        out_bwd = torch.flip(out_bwd, dims=[1]) # 将结果再反转回来对齐
+        # 3. 融合双向特征
         out = self.norm(out_fwd + out_bwd)
         return out
 
@@ -85,7 +110,9 @@ class EmoMambaLLM_Base(nn.Module):
         super().__init__()
         self.fusion_module = ConvAttentionFusion(audio_dim, visual_dim, fusion_dim)
         # 融合后拼接的维度是 fusion_dim * 2 = 1024
-        self.bi_mamba = MockBiMamba(d_model=fusion_dim * 2)
+        # self.bi_mamba = MockBiMamba(d_model=fusion_dim * 2)
+        # 将原来的 self.bi_mamba = MockBiMamba(d_model=fusion_dim * 2) 改为：
+        self.bi_mamba = RealBiMamba(d_model=fusion_dim * 2)
         
     def forward(self, audio, visual):
         fused_features = self.fusion_module(audio, visual)
